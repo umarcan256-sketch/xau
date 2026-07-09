@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XAU/USD — SMC Bias + Scalp Engine</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+  :root {
+    --bg:#080a0f; --surface:#0d1117; --surface2:#111827;
+    --border:#1a2030; --border2:#243044;
+    --gold:#c8a84b; --gold-dim:#7a6228; --gold-bg:rgba(200,168,75,0.08);
+    --bull:#22c55e; --bull-bg:rgba(34,197,94,0.08);
+    --bear:#ef4444; --bear-bg:rgba(239,68,68,0.08);
+    --neutral:#94a3b8; --text:#e2e8f0; --muted:#475569; --muted2:#334155;
+    --purple:#a78bfa; --cyan:#22d3ee;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;padding:16px;}
+
+  /* HEADER */
+  .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;}
+  .logo{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--gold);letter-spacing:.15em;text-transform:uppercase;}
+  .logo span{color:var(--muted);}
+  .header-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .badge{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:3px 9px;border:1px solid var(--border);border-radius:4px;color:var(--muted);}
+  .badge.active{border-color:var(--gold-dim);color:var(--gold);}
+  .timer{display:inline-flex;align-items:center;gap:5px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);}
+  .tdot{width:5px;height:5px;border-radius:50%;background:var(--gold);animation:pulse 1s infinite;}
+
+  /* CONTROLS */
+  .controls{display:flex;gap:10px;margin-bottom:14px;align-items:flex-end;flex-wrap:wrap;}
+  .ig{display:flex;flex-direction:column;gap:3px;}
+  .il{font-size:9px;font-family:'IBM Plex Mono',monospace;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;}
+  input[type=password],input[type=text]{background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 9px;border-radius:4px;outline:none;width:190px;}
+  input:focus{border-color:var(--gold-dim);}
+  .btn{background:var(--gold);color:#000;border:none;font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:7px 16px;border-radius:4px;cursor:pointer;transition:opacity .2s;white-space:nowrap;}
+  .btn:hover{opacity:.85;} .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .btn.stop{background:transparent;border:1px solid var(--bear);color:var(--bear);}
+  .smsg{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);padding-bottom:1px;}
+  .smsg.ok{color:var(--bull);} .smsg.err{color:var(--bear);}
+
+  /* SESSION BAR */
+  .sbar-bg{height:2px;background:var(--border);border-radius:1px;margin-bottom:14px;overflow:hidden;}
+  .sbar-fill{height:100%;background:linear-gradient(90deg,var(--gold-dim),var(--gold));border-radius:1px;transition:width 1s linear;}
+
+  /* GRID */
+  .row{display:grid;gap:10px;margin-bottom:10px;}
+  .row3{grid-template-columns:1fr 1fr 1fr;}
+  .row2{grid-template-columns:3fr 2fr;}
+  .row-full{grid-template-columns:1fr;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;}
+  .card-label{font-size:9px;font-family:'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+
+  /* PRICE */
+  .price-val{font-family:'IBM Plex Mono',monospace;font-size:32px;font-weight:700;color:var(--gold);line-height:1;}
+  .price-chg{font-family:'IBM Plex Mono',monospace;font-size:11px;margin-top:4px;color:var(--muted);}
+  .price-chg.up{color:var(--bull);} .price-chg.down{color:var(--bear);}
+
+  /* BIAS */
+  .bias-row{display:flex;align-items:center;gap:8px;}
+  .bdot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .bdot.on{animation:pulse 2s infinite;}
+  .bdot.bull{background:var(--bull);box-shadow:0 0 8px var(--bull);}
+  .bdot.bear{background:var(--bear);box-shadow:0 0 8px var(--bear);}
+  .bdot.neutral{background:var(--neutral);}
+  .btxt{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:700;}
+  .btxt.bull{color:var(--bull);} .btxt.bear{color:var(--bear);} .btxt.neutral{color:var(--neutral);}
+  .cbar-bg{height:5px;background:var(--border);border-radius:3px;margin-top:9px;overflow:hidden;}
+  .cbar{height:100%;border-radius:3px;transition:width .8s ease;}
+  .cbar.bull{background:var(--bull);} .cbar.bear{background:var(--bear);} .cbar.neutral{background:var(--neutral);}
+  .cpct{font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:700;color:var(--text);line-height:1;}
+  .ctag{font-size:10px;color:var(--muted);margin-top:5px;font-family:'IBM Plex Mono',monospace;}
+
+  /* SIGNALS */
+  .sigrow{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);}
+  .sigrow:last-child{border-bottom:none;}
+  .signame{font-family:'IBM Plex Mono',monospace;color:var(--muted);font-size:10px;letter-spacing:.05em;}
+  .sigval{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:2px 7px;border-radius:3px;font-weight:500;}
+  .sigval.bull{background:var(--bull-bg);color:var(--bull);}
+  .sigval.bear{background:var(--bear-bg);color:var(--bear);}
+  .sigval.neutral{background:rgba(148,163,184,.1);color:var(--neutral);}
+  .sigval.gold{background:var(--gold-bg);color:var(--gold);}
+
+  /* FEED */
+  .feed{font-family:'IBM Plex Mono',monospace;font-size:10px;max-height:200px;overflow-y:auto;}
+  .feed::-webkit-scrollbar{width:3px;}
+  .feed::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+  .fentry{padding:6px 0;border-bottom:1px solid var(--border);line-height:1.5;}
+  .fentry:last-child{border-bottom:none;}
+  .ftime{color:var(--muted);margin-right:6px;}
+  .fbias{font-weight:700;}
+  .fbias.bull{color:var(--bull);} .fbias.bear{color:var(--bear);} .fbias.neutral{color:var(--neutral);}
+
+  /* LEVELS */
+  .lvlrow{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);}
+  .lvlrow:last-child{border-bottom:none;}
+  .lvltype{font-family:'IBM Plex Mono',monospace;color:var(--muted);font-size:9px;letter-spacing:.08em;}
+  .lvlprice{font-family:'IBM Plex Mono',monospace;color:var(--text);font-size:11px;}
+  .lvldist{font-family:'IBM Plex Mono',monospace;color:var(--muted);font-size:9px;}
+
+  /* ── SCALPING SECTION ── */
+  .scalp-section{margin-top:10px;}
+  .scalp-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .scalp-title{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);}
+  .scalp-sub{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--muted);}
+
+  .scalp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .scalp-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;position:relative;overflow:hidden;}
+  .scalp-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+  .scalp-card.long::before{background:var(--bull);}
+  .scalp-card.short::before{background:var(--bear);}
+  .scalp-card.wait::before{background:var(--neutral);}
+
+  .scalp-dir{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+  .scalp-dir-label{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;}
+  .scalp-dir-label.long{color:var(--bull);}
+  .scalp-dir-label.short{color:var(--bear);}
+  .scalp-dir-label.wait{color:var(--neutral);}
+  .scalp-prob{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:auto;}
+  .scalp-prob.high{background:var(--bull-bg);color:var(--bull);}
+  .scalp-prob.med{background:var(--gold-bg);color:var(--gold);}
+  .scalp-prob.low{background:rgba(148,163,184,.1);color:var(--neutral);}
+
+  .scalp-rows{display:flex;flex-direction:column;gap:4px;}
+  .scalp-row{display:flex;justify-content:space-between;align-items:center;}
+  .scalp-key{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:.05em;}
+  .scalp-val{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;}
+  .scalp-val.entry{color:var(--cyan);}
+  .scalp-val.tp{color:var(--bull);}
+  .scalp-val.sl{color:var(--bear);}
+  .scalp-val.rr{color:var(--purple);}
+  .scalp-val.neutral{color:var(--neutral);}
+
+  .scalp-reason{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--muted);margin-top:7px;padding-top:7px;border-top:1px solid var(--border);line-height:1.4;}
+
+  .scalp-loading{text-align:center;padding:20px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+  .scalp-loading span{animation:pulse 1.5s infinite;}
+
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  @media(max-width:750px){
+    .row3{grid-template-columns:1fr 1fr;}
+    .row2{grid-template-columns:1fr;}
+    .scalp-grid{grid-template-columns:1fr;}
+    input[type=password],input[type=text]{width:140px;}
+    .price-val{font-size:24px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">XAU/USD <span>// SMC + Scalp Engine</span></div>
+  <div class="header-right">
+    <div class="timer" id="nextUpdate"><div class="tdot"></div> Waiting…</div>
+    <div class="badge" id="sessionBadge">SESSION INACTIVE</div>
+  </div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <div class="ig">
+    <div class="il">Twelve Data Key</div>
+    <input type="password" id="tdKey" placeholder="paste key here" />
+  </div>
+  <div class="ig">
+    <div class="il">Anthropic Proxy URL</div>
+    <input type="text" id="proxyUrl" placeholder="https://your-worker.workers.dev" />
+  </div>
+  <button class="btn" id="startBtn" onclick="startEngine()">Start Engine</button>
+  <button class="btn stop" id="stopBtn" onclick="stopEngine()" disabled>Stop</button>
+  <div class="smsg" id="statusMsg">Enter keys and proxy URL to begin.</div>
+</div>
+
+<div class="sbar-bg"><div class="sbar-fill" id="sessionBar" style="width:0%"></div></div>
+
+<!-- TOP ROW -->
+<div class="row row3">
+  <div class="card">
+    <div class="card-label">Live Price — XAU/USD</div>
+    <div class="price-val" id="livePrice">—</div>
+    <div class="price-chg" id="priceChg">— from prev</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Current Bias</div>
+    <div class="bias-row">
+      <div class="bdot neutral" id="biasDot"></div>
+      <div class="btxt neutral" id="biasTxt">—</div>
+    </div>
+    <div class="cbar-bg"><div class="cbar neutral" id="confBar" style="width:0%"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-label">Confidence</div>
+    <div class="cpct" id="confPct">—%</div>
+    <div class="ctag" id="confTag">Awaiting data…</div>
+  </div>
+</div>
+
+<!-- MIDDLE ROW -->
+<div class="row row2">
+  <div class="card">
+    <div class="card-label" style="margin-bottom:10px;">Minute-by-Minute Bias Feed</div>
+    <div class="feed" id="feedContainer">
+      <div class="fentry"><span class="ftime">--:--</span><span class="fbias neutral">Awaiting first update…</span></div>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    <div class="card">
+      <div class="card-label">Structure Signals</div>
+      <div class="sigrow"><span class="signame">CHoCH</span><span class="sigval neutral" id="sig-choch">—</span></div>
+      <div class="sigrow"><span class="signame">BOS</span><span class="sigval neutral" id="sig-bos">—</span></div>
+      <div class="sigrow"><span class="signame">FVG</span><span class="sigval neutral" id="sig-fvg">—</span></div>
+      <div class="sigrow"><span class="signame">Order Block</span><span class="sigval neutral" id="sig-ob">—</span></div>
+      <div class="sigrow"><span class="signame">Liquidity</span><span class="sigval neutral" id="sig-liq">—</span></div>
+      <div class="sigrow"><span class="signame">Session</span><span class="sigval gold" id="sig-sess">INACTIVE</span></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Key Levels</div>
+      <div class="lvlrow"><span class="lvltype">RESIST</span><span class="lvlprice" id="lvl-r">—</span><span class="lvldist" id="lvl-r-d">—</span></div>
+      <div class="lvlrow"><span class="lvltype">SUPPORT</span><span class="lvlprice" id="lvl-s">—</span><span class="lvldist" id="lvl-s-d">—</span></div>
+      <div class="lvlrow"><span class="lvltype">OB HIGH</span><span class="lvlprice" id="lvl-obh">—</span><span class="lvldist" id="lvl-obh-d">—</span></div>
+      <div class="lvlrow"><span class="lvltype">OB LOW</span><span class="lvlprice" id="lvl-obl">—</span><span class="lvldist" id="lvl-obl-d">—</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- SCALPING SECTION -->
+<div class="scalp-section">
+  <div class="scalp-header">
+    <div>
+      <div class="scalp-title">⚡ Upcoming Scalp Opportunities</div>
+      <div class="scalp-sub" style="margin-top:3px;">AI-generated setups — next 3 potential entries based on current structure</div>
+    </div>
+  </div>
+  <div class="scalp-grid" id="scalpGrid">
+    <div class="scalp-loading" style="grid-column:1/-1"><span>Waiting for first analysis…</span></div>
+  </div>
+</div>
+
+<script>
+  let intervalId=null, isRunning=false, prevPrice=null, cdTick=null;
+
+  // ── SESSION ──────────────────────────────────────────────────────────
+  function londonNow(){return new Date(new Date().toLocaleString('en-GB',{timeZone:'Europe/London'}));}
+  function isInSession(){const t=londonNow(),m=t.getHours()*60+t.getMinutes();return m>=180&&m<750;}
+  function sessionPct(){const t=londonNow(),s=t.getHours()*3600+t.getMinutes()*60+t.getSeconds();return Math.max(0,Math.min(100,((s-10800)/(27000-10800))*100));}
+  function fmtTime(){return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/London'});}
+
+  // ── TWELVE DATA ──────────────────────────────────────────────────────
+  async function fetchCandles(apiKey){
+    const r=await fetch(`https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1min&outputsize=60&apikey=${apiKey}`);
+    if(!r.ok) throw new Error('Twelve Data: '+r.status);
+    const d=await r.json();
+    if(d.status==='error') throw new Error(d.message);
+    return d.values.map(c=>({open:+c.open,high:+c.high,low:+c.low,close:+c.close,dt:c.datetime})).reverse();
+  }
+
+  // ── LOCAL SMC ANALYSIS ───────────────────────────────────────────────
+  function smcAnalyze(c){
+    const n=c.length;
+    const swH=[],swL=[];
+    for(let i=3;i<n-3;i++){
+      if(c[i].high>c[i-1].high&&c[i].high>c[i-2].high&&c[i].high>c[i+1].high&&c[i].high>c[i+2].high) swH.push({p:c[i].high,i});
+      if(c[i].low<c[i-1].low&&c[i].low<c[i-2].low&&c[i].low<c[i+1].low&&c[i].low<c[i+2].low) swL.push({p:c[i].low,i});
+    }
+    const lH=swH.length?swH[swH.length-1]:null, pH=swH.length>1?swH[swH.length-2]:null;
+    const lL=swL.length?swL[swL.length-1]:null, pL=swL.length>1?swL[swL.length-2]:null;
+    const cur=c[n-1].close;
+
+    let bos='None';
+    if(lH&&pH&&lH.p>pH.p) bos='Bullish';
+    else if(lL&&pL&&lL.p<pL.p) bos='Bearish';
+
+    let choch='None';
+    if(bos==='Bullish'&&lL&&pL&&lL.p>pL.p) choch='Bullish';
+    else if(bos==='Bearish'&&lH&&pH&&lH.p<pH.p) choch='Bearish';
+
+    let fvg='None';
+    for(let i=n-3;i>=Math.max(0,n-15);i--){
+      if(c[i+2].low>c[i].high){fvg='Open Bullish';break;}
+      if(c[i+2].high<c[i].low){fvg='Open Bearish';break;}
+    }
+
+    let ob='None',ob_h=null,ob_l=null;
+    if(bos==='Bullish'){for(let i=n-5;i>=Math.max(0,n-20);i--){if(c[i].close<c[i].open){ob=`Bullish OB ${c[i].low.toFixed(2)}`;ob_h=c[i].high;ob_l=c[i].low;break;}}}
+    else if(bos==='Bearish'){for(let i=n-5;i>=Math.max(0,n-20);i--){if(c[i].close>c[i].open){ob=`Bearish OB ${c[i].high.toFixed(2)}`;ob_h=c[i].high;ob_l=c[i].low;break;}}}
+
+    const h20=c.slice(-20).map(x=>x.high),l20=c.slice(-20).map(x=>x.low);
+    const maxH=Math.max(...h20),minL=Math.min(...l20);
+    const dH=maxH-cur,dL=cur-minL;
+    let liq='Balanced';
+    if(dH<dL*0.7) liq=`Buy-side above ${maxH.toFixed(2)}`;
+    else if(dL<dH*0.7) liq=`Sell-side below ${minL.toFixed(2)}`;
+
+    const resistance=lH?lH.p:Math.max(...c.slice(-10).map(x=>x.high));
+    const support=lL?lL.p:Math.min(...c.slice(-10).map(x=>x.low));
+
+    let bs=0,rs=0;
+    if(bos==='Bullish')bs+=30; if(bos==='Bearish')rs+=30;
+    if(choch==='Bullish')bs+=25; if(choch==='Bearish')rs+=25;
+    if(fvg==='Open Bullish')bs+=15; if(fvg==='Open Bearish')rs+=15;
+    if(ob.startsWith('Bullish'))bs+=15; if(ob.startsWith('Bearish'))rs+=15;
+    if(liq.startsWith('Sell-side'))rs+=10; if(liq.startsWith('Buy-side'))bs+=10;
+    const mom=c[n-1].close-c[n-5].close;
+    if(mom>0)bs+=5; else rs+=5;
+
+    const tot=bs+rs||1;
+    let bias='NEUTRAL',conf=50,tag='No clear structure';
+    if(bs>rs){bias='BULLISH';conf=Math.min(95,Math.round(50+(bs/tot)*50));tag=bos==='Bullish'?'BOS confirmed bullish':choch==='Bullish'?'CHoCH — bullish shift':'Bullish structure forming';}
+    else if(rs>bs){bias='BEARISH';conf=Math.min(95,Math.round(50+(rs/tot)*50));tag=bos==='Bearish'?'BOS confirmed bearish':choch==='Bearish'?'CHoCH — bearish shift':'Bearish structure forming';}
+
+    return{bias,conf,tag,choch,bos,fvg,ob,ob_h,ob_l,liq,resistance,support,cur,swH,swL,candles:c};
+  }
+
+  // ── AI SCALP SETUPS via Proxy ─────────────────────────────────────────
+  async function fetchScalpSetups(smc,proxyUrl){
+    const c=smc.candles,n=c.length;
+    const last10=c.slice(-10).map(x=>`O:${x.open.toFixed(2)} H:${x.high.toFixed(2)} L:${x.low.toFixed(2)} C:${x.close.toFixed(2)}`).join('\n');
+
+    const prompt=`You are an ICT/SMC expert scalper for XAU/USD (gold) during London session.
+
+Current SMC Analysis:
+- Price: ${smc.cur.toFixed(2)}
+- Bias: ${smc.bias} (${smc.conf}% confidence)
+- BOS: ${smc.bos} | CHoCH: ${smc.choch}
+- FVG: ${smc.fvg} | OB: ${smc.ob}
+- Liquidity: ${smc.liq}
+- Resistance: ${smc.resistance.toFixed(2)} | Support: ${smc.support.toFixed(2)}
+
+Last 10 candles (1-min):
+${last10}
+
+Generate exactly 3 upcoming scalp opportunities. Each setup should be specific with precise price levels.
+Setups should include: the most probable trade NOW, a secondary setup if price retraces, and a third if bias shifts.
+
+Respond ONLY in this exact JSON (no markdown, no extra text):
+{
+  "setups": [
+    {
+      "direction": "LONG" | "SHORT" | "WAIT",
+      "probability": "HIGH" | "MED" | "LOW",
+      "entry": <price number>,
+      "tp1": <price number>,
+      "tp2": <price number>,
+      "sl": <price number>,
+      "rr": "<e.g. 1:2.5>",
+      "trigger": "<what needs to happen before entry — max 10 words>",
+      "reason": "<SMC reason — max 15 words>"
+    },
+    { ... },
+    { ... }
+  ]
+}`;
+
+    const res=await fetch(proxyUrl,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:1000,
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    if(!res.ok) throw new Error('Proxy error: '+res.status);
+    const d=await res.json();
+    if(d.error) throw new Error(d.error.message);
+    const txt=d.content[0].text.trim().replace(/```json|```/g,'');
+    return JSON.parse(txt);
+  }
+
+  // ── RENDER SCALP CARDS ───────────────────────────────────────────────
+  function renderScalp(setups){
+    const grid=document.getElementById('scalpGrid');
+    grid.innerHTML='';
+    setups.forEach(s=>{
+      const dir=s.direction.toLowerCase();
+      const prob=s.probability.toLowerCase();
+      const card=document.createElement('div');
+      card.className='scalp-card '+(dir==='long'?'long':dir==='short'?'short':'wait');
+      card.innerHTML=`
+        <div class="scalp-dir">
+          <div class="scalp-dir-label ${dir}">${s.direction==='WAIT'?'⏳ WAIT':s.direction==='LONG'?'▲ LONG':'▼ SHORT'}</div>
+          <div class="scalp-prob ${prob==='high'?'high':prob==='med'?'med':'low'}">${s.probability}</div>
+        </div>
+        <div class="scalp-rows">
+          <div class="scalp-row"><span class="scalp-key">ENTRY</span><span class="scalp-val entry">${s.entry?.toFixed(2)||'—'}</span></div>
+          <div class="scalp-row"><span class="scalp-key">TP1</span><span class="scalp-val tp">${s.tp1?.toFixed(2)||'—'}</span></div>
+          <div class="scalp-row"><span class="scalp-key">TP2</span><span class="scalp-val tp">${s.tp2?.toFixed(2)||'—'}</span></div>
+          <div class="scalp-row"><span class="scalp-key">SL</span><span class="scalp-val sl">${s.sl?.toFixed(2)||'—'}</span></div>
+          <div class="scalp-row"><span class="scalp-key">R:R</span><span class="scalp-val rr">${s.rr||'—'}</span></div>
+          <div class="scalp-row"><span class="scalp-key">TRIGGER</span><span class="scalp-val neutral" style="font-size:9px;text-align:right;max-width:130px;">${s.trigger||'—'}</span></div>
+        </div>
+        <div class="scalp-reason">${s.reason||'—'}</div>`;
+      grid.appendChild(card);
+    });
+  }
+
+  // ── UI UPDATE ────────────────────────────────────────────────────────
+  function updateUI(price,smc){
+    document.getElementById('livePrice').textContent=price.toFixed(2);
+    const diff=prevPrice?(price-prevPrice):0;
+    const ce=document.getElementById('priceChg');
+    ce.textContent=(diff>=0?'+':'')+diff.toFixed(2)+' from prev';
+    ce.className='price-chg '+(diff>0?'up':diff<0?'down':'');
+
+    const cl=smc.bias==='BULLISH'?'bull':smc.bias==='BEARISH'?'bear':'neutral';
+    document.getElementById('biasDot').className='bdot on '+cl;
+    const bt=document.getElementById('biasTxt');bt.textContent=smc.bias;bt.className='btxt '+cl;
+    document.getElementById('confPct').textContent=smc.conf+'%';
+    document.getElementById('confTag').textContent=smc.tag;
+    const cb=document.getElementById('confBar');cb.style.width=smc.conf+'%';cb.className='cbar '+cl;
+
+    const sig=(id,v)=>{
+      const el=document.getElementById(id);el.textContent=v;
+      const lv=v.toLowerCase();
+      el.className='sigval '+(lv.includes('bull')?'bull':lv.includes('bear')?'bear':(lv==='none'||lv==='balanced')?'neutral':'gold');
+    };
+    sig('sig-choch',smc.choch);sig('sig-bos',smc.bos);sig('sig-fvg',smc.fvg);
+    sig('sig-ob',smc.ob);sig('sig-liq',smc.liq);
+    document.getElementById('sig-sess').textContent=isInSession()?'LONDON OPEN':'INACTIVE';
+
+    const lv=(pid,did,v)=>{if(!v)return;document.getElementById(pid).textContent=v.toFixed(2);const d=(v-price).toFixed(2);document.getElementById(did).textContent=(d>=0?'+':'')+d;};
+    lv('lvl-r','lvl-r-d',smc.resistance);lv('lvl-s','lvl-s-d',smc.support);
+    lv('lvl-obh','lvl-obh-d',smc.ob_h);lv('lvl-obl','lvl-obl-d',smc.ob_l);
+
+    const t=fmtTime(),feed=document.getElementById('feedContainer');
+    if(feed.children.length===1&&feed.children[0].querySelector('.neutral')?.textContent.includes('Awaiting'))feed.innerHTML='';
+    const e=document.createElement('div');e.className='fentry';
+    e.innerHTML=`<span class="ftime">${t}</span><span class="fbias ${cl}">${smc.bias} ${smc.conf}%</span> — <span style="color:var(--muted);font-size:10px;">${smc.tag}</span>`;
+    feed.insertBefore(e,feed.firstChild);
+    if(feed.children.length>60)feed.removeChild(feed.lastChild);
+
+    document.getElementById('sessionBar').style.width=sessionPct()+'%';
+    const b=document.getElementById('sessionBadge');
+    b.textContent=isInSession()?'LONDON ACTIVE':'SESSION INACTIVE';
+    b.className='badge'+(isInSession()?' active':'');
+  }
+
+  function startCountdown(){
+    if(cdTick)clearInterval(cdTick);let s=60;
+    const el=document.getElementById('nextUpdate');
+    cdTick=setInterval(()=>{s--;
+      if(s<=0){clearInterval(cdTick);el.innerHTML='<div class="tdot"></div> Refreshing…';}
+      else el.innerHTML=`<div class="tdot"></div> Next in ${s}s`;
+    },1000);
+  }
+
+  // ── MAIN CYCLE ───────────────────────────────────────────────────────
+  async function runCycle(){
+    const tdKey=document.getElementById('tdKey').value.trim();
+    const proxyUrl=document.getElementById('proxyUrl').value.trim();
+    const st=document.getElementById('statusMsg');
+    try{
+      st.className='smsg';st.textContent='Fetching candles…';
+      const candles=await fetchCandles(tdKey);
+      const price=candles[candles.length-1].close;
+      st.textContent='Analyzing SMC structure…';
+      const smc=smcAnalyze(candles);
+      updateUI(price,smc);
+      prevPrice=price;
+
+      if(proxyUrl){
+        st.textContent='Getting AI scalp setups…';
+        document.getElementById('scalpGrid').innerHTML='<div class="scalp-loading" style="grid-column:1/-1"><span>AI analyzing scalp opportunities…</span></div>';
+        const scalp=await fetchScalpSetups(smc,proxyUrl);
+        renderScalp(scalp.setups);
+      }
+
+      st.className='smsg ok';st.textContent=`Updated ${fmtTime()} (London)`;
+      startCountdown();
+    }catch(err){
+      st.className='smsg err';st.textContent='Error: '+err.message;
+    }
+  }
+
+  function startEngine(){
+    const tdKey=document.getElementById('tdKey').value.trim();
+    if(!tdKey){document.getElementById('statusMsg').className='smsg err';document.getElementById('statusMsg').textContent='Twelve Data key required.';return;}
+    if(isRunning)return;
+    isRunning=true;
+    document.getElementById('startBtn').disabled=true;
+    document.getElementById('stopBtn').disabled=false;
+    runCycle();intervalId=setInterval(runCycle,60000);
+  }
+
+  function stopEngine(){
+    if(intervalId)clearInterval(intervalId);if(cdTick)clearInterval(cdTick);
+    isRunning=false;intervalId=null;cdTick=null;
+    document.getElementById('startBtn').disabled=false;
+    document.getElementById('stopBtn').disabled=true;
+    document.getElementById('statusMsg').className='smsg';
+    document.getElementById('statusMsg').textContent='Engine stopped.';
+    document.getElementById('nextUpdate').innerHTML='<div class="tdot"></div> Stopped';
+  }
+</script>
+</body>
+</html>
