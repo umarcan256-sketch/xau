@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XAU/USD — SMC Bias Engine</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap');
+  :root {
+    --bg: #080a0f; --surface: #0d1117; --border: #1a2030;
+    --gold: #c8a84b; --gold-dim: #7a6228;
+    --bull: #22c55e; --bear: #ef4444; --neutral: #94a3b8;
+    --text: #e2e8f0; --muted: #475569;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; min-height: 100vh; padding: 16px; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px; }
+  .logo { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--gold); letter-spacing: 0.15em; text-transform: uppercase; }
+  .logo span { color: var(--muted); }
+  .session-badge { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); }
+  .session-badge.active { border-color: var(--gold-dim); color: var(--gold); }
+
+  .controls { display: flex; gap: 10px; margin-bottom: 16px; align-items: flex-end; flex-wrap: wrap; }
+  .input-group { display: flex; flex-direction: column; gap: 4px; }
+  .input-label { font-size: 10px; font-family: 'IBM Plex Mono', monospace; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  input[type="password"] { background: var(--surface); border: 1px solid var(--border); color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 7px 10px; border-radius: 5px; outline: none; width: 200px; }
+  input:focus { border-color: var(--gold-dim); }
+  button { background: var(--gold); color: #000; border: none; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 8px 18px; border-radius: 5px; cursor: pointer; transition: opacity 0.2s; }
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.stop { background: transparent; border: 1px solid var(--bear); color: var(--bear); }
+  .status-msg { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); padding-bottom: 2px; }
+  .status-msg.ok { color: var(--bull); }
+  .status-msg.err { color: var(--bear); }
+
+  .session-bar-bg { height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 16px; overflow: hidden; }
+  .session-bar-fill { height: 100%; background: linear-gradient(90deg, var(--gold-dim), var(--gold)); border-radius: 2px; transition: width 1s linear; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .grid-wide { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card-label { font-size: 10px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+
+  .price-value { font-family: 'IBM Plex Mono', monospace; font-size: 34px; font-weight: 600; color: var(--gold); line-height: 1; }
+  .price-change { font-family: 'IBM Plex Mono', monospace; font-size: 12px; margin-top: 4px; color: var(--muted); }
+  .price-change.up { color: var(--bull); }
+  .price-change.down { color: var(--bear); }
+
+  .bias-display { display: flex; align-items: center; gap: 10px; }
+  .bias-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .bias-dot.active { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+  .bias-dot.bull { background: var(--bull); box-shadow: 0 0 8px var(--bull); }
+  .bias-dot.bear { background: var(--bear); box-shadow: 0 0 8px var(--bear); }
+  .bias-dot.neutral { background: var(--neutral); }
+  .bias-text { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 600; }
+  .bias-text.bull { color: var(--bull); }
+  .bias-text.bear { color: var(--bear); }
+  .bias-text.neutral { color: var(--neutral); }
+
+  .conf-bar-bg { height: 6px; background: var(--border); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+  .conf-bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+  .conf-bar-fill.bull { background: var(--bull); }
+  .conf-bar-fill.bear { background: var(--bear); }
+  .conf-bar-fill.neutral { background: var(--neutral); }
+  .conf-pct { font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 600; color: var(--text); line-height: 1; }
+
+  .signal-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .signal-row:last-child { border-bottom: none; }
+  .signal-name { font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-size: 11px; letter-spacing: 0.05em; }
+  .signal-val { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 2px 8px; border-radius: 3px; font-weight: 500; }
+  .signal-val.bull { background: rgba(34,197,94,0.12); color: var(--bull); }
+  .signal-val.bear { background: rgba(239,68,68,0.12); color: var(--bear); }
+  .signal-val.neutral { background: rgba(148,163,184,0.1); color: var(--neutral); }
+  .signal-val.gold { background: rgba(200,168,75,0.12); color: var(--gold); }
+
+  .feed { font-family: 'IBM Plex Mono', monospace; font-size: 11px; max-height: 240px; overflow-y: auto; }
+  .feed::-webkit-scrollbar { width: 4px; }
+  .feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .feed-entry { padding: 7px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .feed-entry:last-child { border-bottom: none; }
+  .feed-time { color: var(--muted); margin-right: 8px; }
+  .feed-bias { font-weight: 600; }
+  .feed-bias.bull { color: var(--bull); }
+  .feed-bias.bear { color: var(--bear); }
+  .feed-bias.neutral { color: var(--neutral); }
+
+  .level-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .level-row:last-child { border-bottom: none; }
+  .level-type { font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-size: 10px; letter-spacing: 0.08em; }
+  .level-price { font-family: 'IBM Plex Mono', monospace; color: var(--text); font-size: 11px; }
+  .level-dist { font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-size: 10px; }
+
+  .timer-ring { display: inline-flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); }
+  .timer-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); animation: pulse 1s infinite; }
+
+  .side-col { display: flex; flex-direction: column; gap: 12px; }
+
+  @media (max-width: 700px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .grid-wide { grid-template-columns: 1fr; }
+    input[type="password"] { width: 150px; }
+    .price-value { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">XAU/USD <span>// SMC Bias Engine</span></div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <div class="timer-ring" id="nextUpdate"><div class="timer-dot"></div> Waiting…</div>
+    <div class="session-badge" id="sessionBadge">SESSION INACTIVE</div>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="input-group">
+    <div class="input-label">Twelve Data API Key</div>
+    <input type="password" id="tdKey" placeholder="paste your key here" />
+  </div>
+  <button id="startBtn" onclick="startEngine()">Start Engine</button>
+  <button class="stop" id="stopBtn" onclick="stopEngine()" disabled>Stop</button>
+  <div class="status-msg" id="statusMsg">Enter your Twelve Data API key to begin.</div>
+</div>
+
+<div class="session-bar-bg"><div class="session-bar-fill" id="sessionBar" style="width:0%"></div></div>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-label">Live Price — XAU/USD</div>
+    <div class="price-value" id="livePrice">—</div>
+    <div class="price-change" id="priceChange">— from prev</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Current Bias</div>
+    <div class="bias-display">
+      <div class="bias-dot neutral" id="biasDot"></div>
+      <div class="bias-text neutral" id="biasText">—</div>
+    </div>
+    <div class="conf-bar-bg"><div class="conf-bar-fill neutral" id="confBar" style="width:0%"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-label">Confidence</div>
+    <div class="conf-pct" id="confPct">—%</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px;font-family:'IBM Plex Mono',monospace;" id="confTag">Awaiting data…</div>
+  </div>
+</div>
+
+<div class="grid-wide">
+  <div class="card">
+    <div class="card-label" style="margin-bottom:12px;">Minute-by-Minute Bias Feed</div>
+    <div class="feed" id="feedContainer">
+      <div class="feed-entry"><span class="feed-time">--:--</span><span class="feed-bias neutral">Awaiting first update…</span></div>
+    </div>
+  </div>
+  <div class="side-col">
+    <div class="card">
+      <div class="card-label">Structure Signals</div>
+      <div class="signal-row"><span class="signal-name">CHoCH</span><span class="signal-val neutral" id="sig-choch">—</span></div>
+      <div class="signal-row"><span class="signal-name">BOS</span><span class="signal-val neutral" id="sig-bos">—</span></div>
+      <div class="signal-row"><span class="signal-name">FVG</span><span class="signal-val neutral" id="sig-fvg">—</span></div>
+      <div class="signal-row"><span class="signal-name">Order Block</span><span class="signal-val neutral" id="sig-ob">—</span></div>
+      <div class="signal-row"><span class="signal-name">Liquidity</span><span class="signal-val neutral" id="sig-liq">—</span></div>
+      <div class="signal-row"><span class="signal-name">Session</span><span class="signal-val gold" id="sig-session">INACTIVE</span></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Key Levels</div>
+      <div class="level-row"><span class="level-type">RESIST</span><span class="level-price" id="lvl-r">—</span><span class="level-dist" id="lvl-r-d">—</span></div>
+      <div class="level-row"><span class="level-type">SUPPORT</span><span class="level-price" id="lvl-s">—</span><span class="level-dist" id="lvl-s-d">—</span></div>
+      <div class="level-row"><span class="level-type">OB HIGH</span><span class="level-price" id="lvl-ob-h">—</span><span class="level-dist" id="lvl-ob-h-d">—</span></div>
+      <div class="level-row"><span class="level-type">OB LOW</span><span class="level-price" id="lvl-ob-l">—</span><span class="level-dist" id="lvl-ob-l-d">—</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let intervalId = null, isRunning = false, prevPrice = null, countdownTick = null;
+
+  function londonNow() {
+    return new Date(new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' }));
+  }
+
+  function isInSession() {
+    const t = londonNow(), h = t.getHours(), m = t.getMinutes();
+    const mins = h * 60 + m;
+    return mins >= 180 && mins < 750; // 3:00–12:30
+  }
+
+  function sessionProgress() {
+    const t = londonNow();
+    const secs = t.getHours() * 3600 + t.getMinutes() * 60 + t.getSeconds();
+    return Math.max(0, Math.min(100, ((secs - 10800) / (27000 - 10800)) * 100));
+  }
+
+  function fmtTime() {
+    return new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+  }
+
+  async function fetchCandles(apiKey) {
+    const url = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1min&outputsize=60&apikey=${apiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Twelve Data fetch failed: ' + res.status);
+    const data = await res.json();
+    if (data.status === 'error') throw new Error(data.message);
+    return data.values.map(c => ({
+      open: parseFloat(c.open), high: parseFloat(c.high),
+      low: parseFloat(c.low), close: parseFloat(c.close),
+      datetime: c.datetime
+    })).reverse();
+  }
+
+  // ── SMC Analysis Engine ──────────────────────────────────────────────
+  function analyzeSMC(candles) {
+    const n = candles.length;
+    const c = candles;
+
+    // === SWING HIGHS / LOWS (last 30 candles, lookback 3) ===
+    const swingHighs = [], swingLows = [];
+    for (let i = 3; i < n - 3; i++) {
+      const isHigh = c[i].high > c[i-1].high && c[i].high > c[i-2].high && c[i].high > c[i+1].high && c[i].high > c[i+2].high;
+      const isLow  = c[i].low  < c[i-1].low  && c[i].low  < c[i-2].low  && c[i].low  < c[i+1].low  && c[i].low  < c[i+2].low;
+      if (isHigh) swingHighs.push({ price: c[i].high, idx: i });
+      if (isLow)  swingLows.push({ price: c[i].low,  idx: i });
+    }
+
+    const lastHH = swingHighs.length ? swingHighs[swingHighs.length - 1] : null;
+    const lastLL = swingLows.length  ? swingLows[swingLows.length - 1]   : null;
+    const prevHH = swingHighs.length > 1 ? swingHighs[swingHighs.length - 2] : null;
+    const prevLL = swingLows.length  > 1 ? swingLows[swingLows.length  - 2]  : null;
+
+    const cur = c[n - 1].close;
+
+    // === BOS ===
+    let bos = 'None';
+    if (lastHH && prevHH && lastHH.price > prevHH.price) bos = 'Bullish';
+    else if (lastLL && prevLL && lastLL.price < prevLL.price) bos = 'Bearish';
+
+    // === CHoCH ===
+    let choch = 'None';
+    if (bos === 'Bullish' && lastLL && prevLL && lastLL.price > prevLL.price) choch = 'Bullish';
+    else if (bos === 'Bearish' && lastHH && prevHH && lastHH.price < prevHH.price) choch = 'Bearish';
+    // simpler fallback: price crossing recent structure
+    if (choch === 'None') {
+      const recentBearBOS = lastLL && prevLL && lastLL.price < prevLL.price;
+      const recentBullBOS = lastHH && prevHH && lastHH.price > prevHH.price;
+      if (recentBullBOS && cur > (lastHH ? lastHH.price : cur)) choch = 'Bullish';
+      else if (recentBearBOS && cur < (lastLL ? lastLL.price : cur)) choch = 'Bearish';
+    }
+
+    // === FVG (Fair Value Gap) — 3-candle imbalance ===
+    let fvg = 'None';
+    for (let i = n - 3; i >= Math.max(0, n - 15); i--) {
+      const gap_bull = c[i+2].low > c[i].high;   // gap between candle 1 high and candle 3 low
+      const gap_bear = c[i+2].high < c[i].low;   // gap between candle 1 low and candle 3 high
+      if (gap_bull) { fvg = 'Open Bullish'; break; }
+      if (gap_bear) { fvg = 'Open Bearish'; break; }
+    }
+
+    // === ORDER BLOCK (last bearish candle before bullish BOS, last bullish candle before bearish BOS) ===
+    let ob = 'None', ob_high = null, ob_low = null;
+    if (bos === 'Bullish') {
+      // find last bearish candle before the BOS
+      for (let i = n - 5; i >= Math.max(0, n - 20); i--) {
+        if (c[i].close < c[i].open) {
+          ob = `Bullish OB at ${c[i].low.toFixed(2)}`;
+          ob_high = c[i].high; ob_low = c[i].low; break;
+        }
+      }
+    } else if (bos === 'Bearish') {
+      for (let i = n - 5; i >= Math.max(0, n - 20); i--) {
+        if (c[i].close > c[i].open) {
+          ob = `Bearish OB at ${c[i].high.toFixed(2)}`;
+          ob_high = c[i].high; ob_low = c[i].low; break;
+        }
+      }
+    }
+
+    // === LIQUIDITY ===
+    let liquidity = 'Balanced';
+    const highs = c.slice(-20).map(x => x.high);
+    const lows  = c.slice(-20).map(x => x.low);
+    const maxH = Math.max(...highs), minL = Math.min(...lows);
+    const distToHigh = maxH - cur, distToLow = cur - minL;
+    if (distToHigh < distToLow * 0.7) liquidity = `Buy-side above ${maxH.toFixed(2)}`;
+    else if (distToLow < distToHigh * 0.7) liquidity = `Sell-side below ${minL.toFixed(2)}`;
+
+    // === RESISTANCE / SUPPORT ===
+    const resistance = lastHH ? lastHH.price : Math.max(...c.slice(-10).map(x => x.high));
+    const support    = lastLL ? lastLL.price  : Math.min(...c.slice(-10).map(x => x.low));
+
+    // === BIAS + CONFIDENCE ===
+    let bullScore = 0, bearScore = 0;
+    if (bos === 'Bullish') bullScore += 30;
+    if (bos === 'Bearish') bearScore += 30;
+    if (choch === 'Bullish') bullScore += 25;
+    if (choch === 'Bearish') bearScore += 25;
+    if (fvg === 'Open Bullish') bullScore += 15;
+    if (fvg === 'Open Bearish') bearScore += 15;
+    if (ob.startsWith('Bullish')) bullScore += 15;
+    if (ob.startsWith('Bearish')) bearScore += 15;
+    if (liquidity.startsWith('Sell-side')) bullScore += 10; // targeting sell-side = bear
+    if (liquidity.startsWith('Buy-side'))  bearScore += 10;
+    // price momentum (last 5 candles)
+    const momentum = c[n-1].close - c[n-5].close;
+    if (momentum > 0) bullScore += 5; else bearScore += 5;
+
+    let bias = 'NEUTRAL', confidence = 50, tag = 'No clear structure';
+    const total = bullScore + bearScore;
+    if (bullScore > bearScore) {
+      bias = 'BULLISH';
+      confidence = Math.min(95, Math.round(50 + (bullScore / (total || 1)) * 50));
+      tag = bos === 'Bullish' ? 'BOS confirmed bullish' : choch === 'Bullish' ? 'CHoCH — bullish shift' : 'Bullish structure forming';
+    } else if (bearScore > bullScore) {
+      bias = 'BEARISH';
+      confidence = Math.min(95, Math.round(50 + (bearScore / (total || 1)) * 50));
+      tag = bos === 'Bearish' ? 'BOS confirmed bearish' : choch === 'Bearish' ? 'CHoCH — bearish shift' : 'Bearish structure forming';
+    } else {
+      confidence = 50;
+      tag = 'Consolidation — no bias';
+    }
+
+    return { bias, confidence, tag, choch, bos, fvg, ob, liquidity, resistance, support, ob_high, ob_low };
+  }
+
+  // ── UI Update ────────────────────────────────────────────────────────
+  function updateUI(price, analysis) {
+    document.getElementById('livePrice').textContent = price.toFixed(2);
+    const diff = prevPrice ? (price - prevPrice) : 0;
+    const changeEl = document.getElementById('priceChange');
+    changeEl.textContent = (diff >= 0 ? '+' : '') + diff.toFixed(2) + ' from prev';
+    changeEl.className = 'price-change ' + (diff > 0 ? 'up' : diff < 0 ? 'down' : '');
+
+    const cls = analysis.bias === 'BULLISH' ? 'bull' : analysis.bias === 'BEARISH' ? 'bear' : 'neutral';
+
+    const dot = document.getElementById('biasDot');
+    dot.className = 'bias-dot active ' + cls;
+    const bt = document.getElementById('biasText');
+    bt.textContent = analysis.bias;
+    bt.className = 'bias-text ' + cls;
+
+    document.getElementById('confPct').textContent = analysis.confidence + '%';
+    document.getElementById('confTag').textContent = analysis.tag;
+    const bar = document.getElementById('confBar');
+    bar.style.width = analysis.confidence + '%';
+    bar.className = 'conf-bar-fill ' + cls;
+
+    const sig = (id, val) => {
+      const el = document.getElementById(id);
+      el.textContent = val;
+      const v = val.toLowerCase();
+      el.className = 'signal-val ' + (v.includes('bull') ? 'bull' : v.includes('bear') ? 'bear' : (v === 'none' || v === 'balanced') ? 'neutral' : 'gold');
+    };
+    sig('sig-choch', analysis.choch);
+    sig('sig-bos', analysis.bos);
+    sig('sig-fvg', analysis.fvg);
+    sig('sig-ob', analysis.ob);
+    sig('sig-liq', analysis.liquidity);
+    sig('sig-session', isInSession() ? 'LONDON OPEN' : 'INACTIVE');
+
+    const lvl = (pid, did, v) => {
+      if (!v) return;
+      document.getElementById(pid).textContent = v.toFixed(2);
+      const d = (v - price).toFixed(2);
+      document.getElementById(did).textContent = (d >= 0 ? '+' : '') + d;
+    };
+    lvl('lvl-r',    'lvl-r-d',    analysis.resistance);
+    lvl('lvl-s',    'lvl-s-d',    analysis.support);
+    lvl('lvl-ob-h', 'lvl-ob-h-d', analysis.ob_high);
+    lvl('lvl-ob-l', 'lvl-ob-l-d', analysis.ob_low);
+
+    const t = fmtTime();
+    const feed = document.getElementById('feedContainer');
+    if (feed.children.length === 1 && feed.children[0].querySelector('.neutral')?.textContent.includes('Awaiting')) {
+      feed.innerHTML = '';
+    }
+    const entry = document.createElement('div');
+    entry.className = 'feed-entry';
+    entry.innerHTML = `<span class="feed-time">${t}</span><span class="feed-bias ${cls}">${analysis.bias} ${analysis.confidence}%</span> — <span style="color:var(--muted);font-size:11px;">${analysis.tag}</span>`;
+    feed.insertBefore(entry, feed.firstChild);
+    if (feed.children.length > 60) feed.removeChild(feed.lastChild);
+
+    document.getElementById('sessionBar').style.width = sessionProgress() + '%';
+    const badge = document.getElementById('sessionBadge');
+    badge.textContent = isInSession() ? 'LONDON ACTIVE' : 'SESSION INACTIVE';
+    badge.className = 'session-badge' + (isInSession() ? ' active' : '');
+  }
+
+  function startCountdown() {
+    if (countdownTick) clearInterval(countdownTick);
+    let secs = 60;
+    const el = document.getElementById('nextUpdate');
+    countdownTick = setInterval(() => {
+      secs--;
+      if (secs <= 0) { clearInterval(countdownTick); el.innerHTML = '<div class="timer-dot"></div> Refreshing…'; }
+      else el.innerHTML = `<div class="timer-dot"></div> Next update in ${secs}s`;
+    }, 1000);
+  }
+
+  async function runCycle() {
+    const tdKey = document.getElementById('tdKey').value.trim();
+    const statusEl = document.getElementById('statusMsg');
+    try {
+      statusEl.className = 'status-msg';
+      statusEl.textContent = 'Fetching live candles…';
+      const candles = await fetchCandles(tdKey);
+      const price = candles[candles.length - 1].close;
+      statusEl.textContent = 'Analyzing SMC structure…';
+      const analysis = analyzeSMC(candles);
+      updateUI(price, analysis);
+      prevPrice = price;
+      statusEl.className = 'status-msg ok';
+      statusEl.textContent = `Updated ${fmtTime()} (London)`;
+      startCountdown();
+    } catch (err) {
+      statusEl.className = 'status-msg err';
+      statusEl.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  function startEngine() {
+    const tdKey = document.getElementById('tdKey').value.trim();
+    if (!tdKey) {
+      document.getElementById('statusMsg').className = 'status-msg err';
+      document.getElementById('statusMsg').textContent = 'Paste your Twelve Data API key first.';
+      return;
+    }
+    if (isRunning) return;
+    isRunning = true;
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('stopBtn').disabled = false;
+    runCycle();
+    intervalId = setInterval(runCycle, 60000);
+  }
+
+  function stopEngine() {
+    if (intervalId) clearInterval(intervalId);
+    if (countdownTick) clearInterval(countdownTick);
+    isRunning = false; intervalId = null; countdownTick = null;
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('stopBtn').disabled = true;
+    document.getElementById('statusMsg').className = 'status-msg';
+    document.getElementById('statusMsg').textContent = 'Engine stopped.';
+    document.getElementById('nextUpdate').innerHTML = '<div class="timer-dot"></div> Stopped';
+  }
+</script>
+</body>
+</html>
