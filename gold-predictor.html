@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XAU/USD — SMC Bias Engine</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #080a0f;
+    --surface: #0d1117;
+    --border: #1a2030;
+    --gold: #c8a84b;
+    --gold-dim: #7a6228;
+    --bull: #22c55e;
+    --bear: #ef4444;
+    --neutral: #94a3b8;
+    --text: #e2e8f0;
+    --muted: #475569;
+    --accent: #c8a84b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--gold);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .logo span { color: var(--muted); }
+
+  .session-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+  }
+
+  .session-badge.active { border-color: var(--gold-dim); color: var(--gold); }
+
+  /* MAIN GRID */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .grid-wide {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  /* CARDS */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .card-label {
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  /* PRICE */
+  .price-value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 36px;
+    font-weight: 600;
+    color: var(--gold);
+    line-height: 1;
+  }
+
+  .price-change {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    margin-top: 4px;
+    color: var(--muted);
+  }
+
+  .price-change.up { color: var(--bull); }
+  .price-change.down { color: var(--bear); }
+
+  /* BIAS CARD */
+  .bias-display {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .bias-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .bias-dot.bull { background: var(--bull); box-shadow: 0 0 8px var(--bull); }
+  .bias-dot.bear { background: var(--bear); box-shadow: 0 0 8px var(--bear); }
+  .bias-dot.neutral { background: var(--neutral); }
+
+  .bias-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 22px;
+    font-weight: 600;
+  }
+
+  .bias-text.bull { color: var(--bull); }
+  .bias-text.bear { color: var(--bear); }
+  .bias-text.neutral { color: var(--neutral); }
+
+  /* CONFIDENCE BAR */
+  .conf-bar-bg {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    margin-top: 10px;
+    overflow: hidden;
+  }
+
+  .conf-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.8s ease;
+  }
+
+  .conf-bar-fill.bull { background: var(--bull); }
+  .conf-bar-fill.bear { background: var(--bear); }
+  .conf-bar-fill.neutral { background: var(--neutral); }
+
+  .conf-pct {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  /* STRUCTURE SIGNALS */
+  .signal-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+
+  .signal-row:last-child { border-bottom: none; }
+
+  .signal-name {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+
+  .signal-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+
+  .signal-val.bull { background: rgba(34,197,94,0.12); color: var(--bull); }
+  .signal-val.bear { background: rgba(239,68,68,0.12); color: var(--bear); }
+  .signal-val.neutral { background: rgba(148,163,184,0.1); color: var(--neutral); }
+  .signal-val.gold { background: rgba(200,168,75,0.12); color: var(--gold); }
+
+  /* LIVE FEED */
+  .feed {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .feed::-webkit-scrollbar { width: 4px; }
+  .feed::-webkit-scrollbar-track { background: transparent; }
+  .feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .feed-entry {
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.5;
+  }
+
+  .feed-entry:last-child { border-bottom: none; }
+
+  .feed-time { color: var(--muted); margin-right: 8px; }
+
+  .feed-bias { font-weight: 600; }
+  .feed-bias.bull { color: var(--bull); }
+  .feed-bias.bear { color: var(--bear); }
+  .feed-bias.neutral { color: var(--neutral); }
+
+  .feed-reason { color: var(--text); margin-top: 2px; padding-left: 62px; }
+
+  /* KEY LEVELS */
+  .level-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+  }
+
+  .level-row:last-child { border-bottom: none; }
+  .level-type { font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-size: 10px; letter-spacing: 0.08em; }
+  .level-price { font-family: 'IBM Plex Mono', monospace; color: var(--text); }
+  .level-dist { font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-size: 10px; }
+
+  /* TIMER */
+  .timer-ring {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .timer-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+    animation: pulse 1s infinite;
+  }
+
+  /* CONTROLS */
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+
+  .input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .input-label {
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  input[type="text"], input[type="password"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 7px 10px;
+    border-radius: 5px;
+    outline: none;
+    width: 220px;
+  }
+
+  input:focus { border-color: var(--gold-dim); }
+
+  button {
+    background: var(--gold);
+    color: #000;
+    border: none;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 8px 18px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    align-self: flex-end;
+  }
+
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  button.stop {
+    background: transparent;
+    border: 1px solid var(--bear);
+    color: var(--bear);
+  }
+
+  .status-msg {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    align-self: flex-end;
+    padding-bottom: 8px;
+  }
+
+  .status-msg.ok { color: var(--bull); }
+  .status-msg.err { color: var(--bear); }
+
+  /* SESSION PROGRESS */
+  .session-bar-bg {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+
+  .session-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gold-dim), var(--gold));
+    border-radius: 2px;
+    transition: width 60s linear;
+  }
+
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .grid-wide { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">XAU/USD <span>// SMC Bias Engine</span></div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <div class="timer-ring" id="nextUpdate"><div class="timer-dot"></div> Waiting…</div>
+    <div class="session-badge" id="sessionBadge">SESSION INACTIVE</div>
+  </div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <div class="input-group">
+    <div class="input-label">Twelve Data API Key</div>
+    <input type="password" id="tdKey" placeholder="your_api_key_here" />
+  </div>
+  <div class="input-group">
+    <div class="input-label">Anthropic API Key</div>
+    <input type="password" id="anKey" placeholder="sk-ant-…" />
+  </div>
+  <button id="startBtn" onclick="startEngine()">Start Engine</button>
+  <button class="stop" id="stopBtn" onclick="stopEngine()" disabled>Stop</button>
+  <div class="status-msg" id="statusMsg">Enter API keys to begin.</div>
+</div>
+
+<!-- SESSION PROGRESS BAR -->
+<div class="session-bar-bg"><div class="session-bar-fill" id="sessionBar" style="width:0%"></div></div>
+
+<!-- MAIN GRID -->
+<div class="grid">
+  <div class="card">
+    <div class="card-label">Live Price — XAU/USD</div>
+    <div class="price-value" id="livePrice">—</div>
+    <div class="price-change" id="priceChange">— pips from open</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Current Bias</div>
+    <div class="bias-display">
+      <div class="bias-dot neutral" id="biasDot"></div>
+      <div class="bias-text neutral" id="biasText">—</div>
+    </div>
+    <div class="conf-bar-bg"><div class="conf-bar-fill neutral" id="confBar" style="width:0%"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Confidence</div>
+    <div class="conf-pct" id="confPct">—%</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px;font-family:'IBM Plex Mono',monospace;" id="confTag">Awaiting data…</div>
+  </div>
+</div>
+
+<div class="grid-wide">
+  <!-- LIVE FEED -->
+  <div class="card">
+    <div class="card-label" style="margin-bottom:12px;">Minute-by-Minute Bias Feed</div>
+    <div class="feed" id="feedContainer">
+      <div class="feed-entry">
+        <span class="feed-time">--:--</span><span class="feed-bias neutral">Awaiting first update…</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STRUCTURE + LEVELS -->
+  <div style="display:flex;flex-direction:column;gap:12px;">
+    <div class="card">
+      <div class="card-label">Structure Signals</div>
+      <div class="signal-row"><span class="signal-name">CHoCH</span><span class="signal-val neutral" id="sig-choch">—</span></div>
+      <div class="signal-row"><span class="signal-name">BOS</span><span class="signal-val neutral" id="sig-bos">—</span></div>
+      <div class="signal-row"><span class="signal-name">FVG</span><span class="signal-val neutral" id="sig-fvg">—</span></div>
+      <div class="signal-row"><span class="signal-name">Order Block</span><span class="signal-val neutral" id="sig-ob">—</span></div>
+      <div class="signal-row"><span class="signal-name">Liquidity</span><span class="signal-val neutral" id="sig-liq">—</span></div>
+      <div class="signal-row"><span class="signal-name">Session</span><span class="signal-val gold" id="sig-session">INACTIVE</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Key Levels</div>
+      <div class="level-row"><span class="level-type">RESIST</span><span class="level-price" id="lvl-r">—</span><span class="level-dist" id="lvl-r-d">—</span></div>
+      <div class="level-row"><span class="level-type">SUPPORT</span><span class="level-price" id="lvl-s">—</span><span class="level-dist" id="lvl-s-d">—</span></div>
+      <div class="level-row"><span class="level-type">OB HIGH</span><span class="level-price" id="lvl-ob-h">—</span><span class="level-dist" id="lvl-ob-h-d">—</span></div>
+      <div class="level-row"><span class="level-type">OB LOW</span><span class="level-price" id="lvl-ob-l">—</span><span class="level-dist" id="lvl-ob-l-d">—</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let intervalId = null;
+  let isRunning = false;
+  let candles = [];
+  let sessionOpen = null;
+  let prevPrice = null;
+
+  const SESSION_START_HOUR = 3;   // London Open 3 AM UTC
+  const SESSION_END_HOUR = 12;
+  const SESSION_END_MIN = 30;
+
+  function londonNow() {
+    const now = new Date();
+    const lon = new Date(now.toLocaleString('en-GB', { timeZone: 'Europe/London' }));
+    return lon;
+  }
+
+  function isInSession() {
+    const t = londonNow();
+    const h = t.getHours(), m = t.getMinutes();
+    const startMins = SESSION_START_HOUR * 60;
+    const endMins = SESSION_END_HOUR * 60 + SESSION_END_MIN;
+    const nowMins = h * 60 + m;
+    return nowMins >= startMins && nowMins < endMins;
+  }
+
+  function sessionProgress() {
+    const t = londonNow();
+    const h = t.getHours(), m = t.getMinutes(), s = t.getSeconds();
+    const start = SESSION_START_HOUR * 60 * 60;
+    const end = (SESSION_END_HOUR * 60 + SESSION_END_MIN) * 60;
+    const now = h * 3600 + m * 60 + s;
+    const pct = Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100));
+    return pct;
+  }
+
+  function fmtTime(d) {
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+  }
+
+  async function fetchCandles(apiKey) {
+    const url = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1min&outputsize=60&apikey=${apiKey}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.status === 'error') throw new Error(data.message);
+    return data.values.reverse(); // oldest first
+  }
+
+  async function getAIBias(candles, anthropicKey) {
+    const last15 = candles.slice(-15);
+    const candleSummary = last15.map(c =>
+      `[${c.datetime}] O:${c.open} H:${c.high} L:${c.low} C:${c.close}`
+    ).join('\n');
+
+    const currentPrice = parseFloat(last15[last15.length - 1].close);
+    const sessionOpenPrice = parseFloat(last15[0].open);
+
+    const prompt = `You are an expert ICT/SMC gold trader analyzing XAU/USD during the London session (3AM–12:30PM London time).
+
+Analyze the last 15 one-minute candles for XAU/USD and give a structured bias update.
+
+CANDLES (oldest → newest):
+${candleSummary}
+
+Current Price: ${currentPrice}
+Session Open: ${sessionOpenPrice}
+
+Analyze for:
+- CHoCH (Change of Character): any recent shift in market structure?
+- BOS (Break of Structure): bullish or bearish BOS confirmed?
+- FVG (Fair Value Gap): any open imbalance near current price?
+- Order Block: nearest bullish or bearish OB?
+- Liquidity: buy-side or sell-side liquidity being targeted?
+- Key Levels: nearest resistance and support prices
+
+Respond ONLY in this exact JSON format (no markdown, no extra text):
+{
+  "bias": "BULLISH" | "BEARISH" | "NEUTRAL",
+  "confidence": <number 0-100>,
+  "tag": "<5 word max summary>",
+  "choch": "<Bullish|Bearish|None>",
+  "bos": "<Bullish|Bearish|None>",
+  "fvg": "<Open Bullish|Open Bearish|None>",
+  "ob": "<Bullish OB at XXXX|Bearish OB at XXXX|None>",
+  "liquidity": "<Buy-side above XXXX|Sell-side below XXXX|Balanced>",
+  "resistance": <number>,
+  "support": <number>,
+  "ob_high": <number>,
+  "ob_low": <number>
+}`;
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    const text = data.content[0].text.trim();
+    return JSON.parse(text);
+  }
+
+  function setClass(el, cls) {
+    el.className = el.className.replace(/bull|bear|neutral|gold/g, '').trim() + ' ' + cls;
+  }
+
+  function updateUI(price, prev, analysis) {
+    // Price
+    document.getElementById('livePrice').textContent = price.toFixed(2);
+    const diff = prev ? (price - prev).toFixed(2) : '0.00';
+    const changeEl = document.getElementById('priceChange');
+    changeEl.textContent = (diff >= 0 ? '+' : '') + diff + ' from prev';
+    changeEl.className = 'price-change ' + (diff > 0 ? 'up' : diff < 0 ? 'down' : '');
+
+    // Bias
+    const biasCls = analysis.bias === 'BULLISH' ? 'bull' : analysis.bias === 'BEARISH' ? 'bear' : 'neutral';
+    const dotEl = document.getElementById('biasDot');
+    dotEl.className = 'bias-dot ' + biasCls;
+    const textEl = document.getElementById('biasText');
+    textEl.textContent = analysis.bias;
+    textEl.className = 'bias-text ' + biasCls;
+
+    // Confidence
+    document.getElementById('confPct').textContent = analysis.confidence + '%';
+    document.getElementById('confTag').textContent = analysis.tag;
+    const bar = document.getElementById('confBar');
+    bar.style.width = analysis.confidence + '%';
+    bar.className = 'conf-bar-fill ' + biasCls;
+
+    // Signals
+    const setSignal = (id, val) => {
+      const el = document.getElementById(id);
+      el.textContent = val;
+      const lower = val.toLowerCase();
+      el.className = 'signal-val ' + (lower.includes('bull') ? 'bull' : lower.includes('bear') ? 'bear' : lower === 'none' || lower === 'balanced' ? 'neutral' : 'gold');
+    };
+    setSignal('sig-choch', analysis.choch);
+    setSignal('sig-bos', analysis.bos);
+    setSignal('sig-fvg', analysis.fvg);
+    setSignal('sig-ob', analysis.ob);
+    setSignal('sig-liq', analysis.liquidity);
+    setSignal('sig-session', isInSession() ? 'LONDON OPEN' : 'INACTIVE');
+
+    // Levels
+    const setLevel = (priceId, distId, lvl) => {
+      if (!lvl) return;
+      document.getElementById(priceId).textContent = lvl.toFixed(2);
+      const d = (lvl - price).toFixed(2);
+      document.getElementById(distId).textContent = (d >= 0 ? '+' : '') + d;
+    };
+    setLevel('lvl-r', 'lvl-r-d', analysis.resistance);
+    setLevel('lvl-s', 'lvl-s-d', analysis.support);
+    setLevel('lvl-ob-h', 'lvl-ob-h-d', analysis.ob_high);
+    setLevel('lvl-ob-l', 'lvl-ob-l-d', analysis.ob_low);
+
+    // Feed
+    const now = fmtTime(new Date());
+    const feed = document.getElementById('feedContainer');
+    const entry = document.createElement('div');
+    entry.className = 'feed-entry';
+    entry.innerHTML = `<span class="feed-time">${now}</span><span class="feed-bias ${biasCls}">${analysis.bias} ${analysis.confidence}%</span> — <span style="color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:11px;">${analysis.tag}</span>`;
+    feed.insertBefore(entry, feed.firstChild);
+    if (feed.children.length > 50) feed.removeChild(feed.lastChild);
+
+    // Session bar
+    document.getElementById('sessionBar').style.width = sessionProgress() + '%';
+    const badge = document.getElementById('sessionBadge');
+    if (isInSession()) {
+      badge.textContent = 'LONDON ACTIVE';
+      badge.className = 'session-badge active';
+    } else {
+      badge.textContent = 'SESSION INACTIVE';
+      badge.className = 'session-badge';
+    }
+  }
+
+  async function runCycle() {
+    const tdKey = document.getElementById('tdKey').value.trim();
+    const anKey = document.getElementById('anKey').value.trim();
+    const statusEl = document.getElementById('statusMsg');
+
+    try {
+      statusEl.className = 'status-msg';
+      statusEl.textContent = 'Fetching candles…';
+
+      candles = await fetchCandles(tdKey);
+      const latest = candles[candles.length - 1];
+      const currentPrice = parseFloat(latest.close);
+
+      statusEl.textContent = 'Analyzing structure…';
+      const analysis = await getAIBias(candles, anKey);
+
+      updateUI(currentPrice, prevPrice, analysis);
+      prevPrice = currentPrice;
+
+      statusEl.className = 'status-msg ok';
+      statusEl.textContent = `Updated ${fmtTime(new Date())} (London)`;
+
+      // Countdown timer
+      let secs = 60;
+      const timerEl = document.getElementById('nextUpdate');
+      const tick = setInterval(() => {
+        secs--;
+        if (secs <= 0) { clearInterval(tick); timerEl.innerHTML = '<div class="timer-dot"></div> Refreshing…'; }
+        else timerEl.innerHTML = `<div class="timer-dot"></div> Next update in ${secs}s`;
+      }, 1000);
+
+    } catch (err) {
+      statusEl.className = 'status-msg err';
+      statusEl.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  function startEngine() {
+    const tdKey = document.getElementById('tdKey').value.trim();
+    const anKey = document.getElementById('anKey').value.trim();
+    if (!tdKey || !anKey) {
+      document.getElementById('statusMsg').className = 'status-msg err';
+      document.getElementById('statusMsg').textContent = 'Both API keys required.';
+      return;
+    }
+    if (isRunning) return;
+    isRunning = true;
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('stopBtn').disabled = false;
+    runCycle();
+    intervalId = setInterval(runCycle, 60000);
+  }
+
+  function stopEngine() {
+    if (intervalId) clearInterval(intervalId);
+    isRunning = false;
+    intervalId = null;
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('stopBtn').disabled = true;
+    document.getElementById('statusMsg').className = 'status-msg';
+    document.getElementById('statusMsg').textContent = 'Engine stopped.';
+    document.getElementById('nextUpdate').innerHTML = '<div class="timer-dot"></div> Stopped';
+  }
+</script>
+</body>
+</html>
